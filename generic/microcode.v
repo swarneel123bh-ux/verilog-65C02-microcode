@@ -9,7 +9,7 @@ localparam RESET = 9'b111111111;
 
 reg [31:0] rom[0:511];
 
-initial $readmemb( "microcode.hex", rom, 0 );
+initial $readmemb( "rtl/verilog-65C02-microcode/generic/microcode.hex", rom, 0 );
 
 always @(posedge clk)
     if( enable )

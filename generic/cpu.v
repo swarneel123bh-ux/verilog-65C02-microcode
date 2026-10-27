@@ -5,21 +5,25 @@
  *
  */
 
-module cpu( 
+module cpu(
     input clk,                          // CPU clock
     input RST,                          // RST signal
-    output [15:0] AD,                   // address bus (combinatorial) 
+    output [15:0] AD,                   // address bus (combinatorial)
     output sync,                        // start of new instruction
     input [7:0] DI,                     // data bus input
-    output reg [7:0] DO,                // data bus output 
+    output reg [7:0] DO,                // data bus output
     output WE,                          // write enable
     input IRQ,                          // interrupt request
     input NMI,                          // non-maskable interrupt request
     input RDY,                          // Ready signal. Pauses CPU when RDY=0
-    input debug );                      // debug for simulation
+    input debug,												// debug for simulation
+    output VPB														// Vector Pull Bar
+);
+
+
 
 wire [7:0] ADH;                         // address bus high
-wire [7:0] ADL;                         // address bus low 
+wire [7:0] ADL;                         // address bus low
 wire [7:0] PCH;                         // program counter high
 wire [7:0] PCL;                         // program counter low
 
@@ -32,13 +36,13 @@ wire [7:0] DB = DI;                     // data bus (alias for DB)
 
 /*
  * Address Bus signals. The 'ctl' module generates a 12 bit vector
- * of control signals for the address bus.  Here we split that up 
+ * of control signals for the address bus.  Here we split that up
  * into individual control signals.
  */
 
 wire [11:0] ab_op;                      // signal from ctl
 wire inc_pc = ab_op[11];                // set if PC needs increment
-wire ld_pc = ab_op[10];                 // load enable for PC 
+wire ld_pc = ab_op[10];                 // load enable for PC
 wire ld_ahl = ab_op[9];                 // load enable for AHL
 wire [3:0] abh_op = ab_op[8:5];         // ABH operation
 wire [3:0] abl_op = ab_op[4:1];         // ABL operation
@@ -53,7 +57,7 @@ wire abh_ci = abl_co;
 
 wire [1:0] do_op;                       // select for Data Output
 
-/* 
+/*
  * ALU Signals
  */
 wire [8:0] alu_op;                      // ALU operation
@@ -67,17 +71,17 @@ wire [9:0] flag_op;                     // flag operation select bits
 wire cond;                              // condition code
 wire B;                                 // BRK flag
 wire [7:0] P;                           // processor status flags
-wire D = P[3];                          // take out D for controller 
+wire D = P[3];                          // take out D for controller
 
 /*
  * Register file signals
  */
 
-wire [6:0] reg_op;                      // the register index 
+wire [6:0] reg_op;                      // the register index
 wire [7:0] R;                           // register file output for selected reg
 
 /*
- * Register file. The registers are only written by ALU output.  
+ * Register file. The registers are only written by ALU output.
  */
 regfile regfile(
     .clk(clk),
@@ -92,8 +96,8 @@ regfile regfile(
 abl abl(
     .clk(clk),                          //
     .rdy(RDY),                          //
-    .CI(abl_ci),                        // carry in 
-    .CO(abl_co),                        // carry from low -> high byte 
+    .CI(abl_ci),                        // carry in
+    .CO(abl_co),                        // carry from low -> high byte
     .cond(cond),                        // condition status for branches
     .op(abl_op),                        // ABL operation
     .ld_ahl(ld_ahl),                    // signal to load 'AHL' register
@@ -103,7 +107,7 @@ abl abl(
     .PCL(PCL),                          // PC low byte
     .ADL(ADL),                          // Address bus low byte
     .DB(DB),                            // data bus
-    .REG(R)                             // output from register file 
+    .REG(R)                             // output from register file
 );
 
 /*
@@ -153,7 +157,7 @@ alu alu(
 /*
  * Control. Generates all control signals.
  */
-ctl ctl( 
+ctl ctl(
     .clk(clk),
     .irq(IRQ),
     .rdy(RDY),
@@ -299,11 +303,16 @@ always @( posedge clk ) begin
       //if( !debug || cycle > 77600000 )
       $display( "%4d %s%s %b.%3H OP:%b AB:%h%h DB:%h AH:%h DO:%h PC:%h%h IR:%h SYNC:%b %s WE:%d R:%h M:%h ALU:%h CO:%h S:%02x A:%h X:%h Y:%h P:%s%s%s%s%s%s %d F:%b",
         cycle, R_, Q_, ctl.control[21:20], ctl.pc, ctl.mode,
-       abh.ABH, abl.ABL, DB, abl.AHL,  DO, PCH, PCL, IR, sync, opcode, WE, R, alu.M, alu_out, alu.CO, 
+       abh.ABH, abl.ABL, DB, abl.AHL,  DO, PCH, PCL, IR, sync, opcode, WE, R, alu.M, alu_out, alu.CO,
        S, A, X, Y,  C_, D_, I_, N_, V_, Z_, cond, sync ? flag_op : 8'h0 );
       if( sync && IR == 8'hdb )
         $finish( );
 end
 `endif
+
+// Approximate VPB: low during vector-range fetches.
+// True W65C02S asserts only during interrupt sequence; this asserts on
+// any vector-range read, which is safe because user code shouldn't access $FFFA-$FFFF.
+assign VPB = ~((AD >= 16'hFFFA) && (AD <= 16'hFFFF) && ~WE);
 
 endmodule
